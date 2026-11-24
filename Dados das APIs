@@ -1,0 +1,659 @@
+# Importa a biblioteca pandas (utilizada para manipulação e análise de dados)
+import pandas as pd
+
+# Importa a biblioteca requests para fazer requisições HTTP (chamar APIs)
+import requests
+
+# Importa a biblioteca json para manipular dados e ficheiros em formato JSON
+import json
+
+# Importa a biblioteca os para gerir caminhos e diretórios do sistema de ficheiros
+import os
+
+# Cria o diretório "datalake/bronze" caso ele ainda não exista (exist_ok=True evita erros se já existir)
+os.makedirs("datalake/bronze", exist_ok=True)
+
+# Define o URL do endpoint que contém os dados que queremos extrair (neste caso, de teste/exemplo)
+url = 'https://jsonplaceholder.typicode.com/todos/1'
+
+# Inicia um bloco de tratamento de exceções para capturar eventuais erros de rede ou conexão
+try:
+    # Faz um pedido GET HTTP à API utilizando o URL fornecido
+    response = requests.get(url)
+
+    # Verifica se o pedido foi bem-sucedido (o código HTTP 200 significa "OK")
+    if response.status_code == 200:
+        # Converte a resposta recebida da API para um dicionário/lista em formato JSON do Python
+        dados = response.json()
+
+        # Define o caminho e o nome do ficheiro onde os dados brutos serão guardados na Camada Bronze
+        caminho_bronze = "datalake/bronze/compras_brutas.json"
+
+        # Abre o ficheiro em modo de escrita ("w") com codificação utf-8 para preservar acentos e caracteres especiais
+        with open(caminho_bronze, "w", encoding="utf-8") as f:
+            # Despeja (salva) o conteúdo do dicionário/lista diretamente no ficheiro JSON de forma indentada e limpa
+            json.dump(dados, f, ensure_ascii=False, indent=4)
+
+        # Mensagem de sucesso impressa no console indicando que a camada Bronze guardou os dados crus
+        print("Sucesso! Ingestão concluída: dados brutos guardados na Camada Bronze.")
+    else:
+        # Caso o servidor responda com um código diferente de 200 (ex: 404, 500), avisa o utilizador
+        print(f"Aviso: A API respondeu com o código {response.status_code}. Verifica se a URL do endpoint está correta.")
+
+# Captura qualquer erro de exceção global (ex: falha de DNS, sem internet) e imprime na tela
+except Exception as e:
+    print("Ocorreu um erro na requisição:", e)
+# Importa o módulo json para manipular e guardar dados estruturados
+import json
+
+# Importa o módulo os para criar diretórios e gerir caminhos de ficheiros
+import os
+
+# Importa a classe SparkSession para iniciar o ambiente de processamento distribuído PySpark
+from pyspark.sql import SparkSession
+
+# Importa funções úteis do PySpark para manipular colunas (filtrar nulos, colocar em maiúsculas, remover espaços)
+from pyspark.sql.functions import col, upper, trim
+
+# Cria a diretoria "datalake/bronze" se ela não existir (evita erros caso já esteja criada)
+os.makedirs("datalake/bronze", exist_ok=True)
+
+# Cria uma lista de dicionários simulando dados brutos de compras públicas (incluindo dados válidos e um registo corrompido/inválido para teste)
+dados_compras_reais = [
+    {
+        "id_item": "ITEM-001",
+        "nome_item": "papel a4 75g",
+        "preco_unitario": 28.50,
+        "orgao": "Secretaria de Educação",
+    },
+    {
+        "id_item": "ITEM-002",
+        "nome_item": "PAPEL A4 75G",
+        "preco_unitario": 145.00,
+        "orgao": "Secretaria de Saúde",
+    },
+    {
+        "id_item": "ITEM-003",
+        "nome_item": " CANETA ESFEROGRAFICA AZUL ",
+        "preco_unitario": 1.20,
+        "orgao": "Secretaria de Administração",
+    },
+    {
+        "id_item": None,  # Registo com ID nulo (sujo)
+        "nome_item": "REGISTRO INVALIDO",
+        "preco_unitario": None,  # Registo com preço nulo (sujo)
+        "orgao": "Desconhecido",
+    },
+]
+
+# Define o caminho do ficheiro onde os dados brutos serão guardados na Camada Bronze
+caminho_bronze = "datalake/bronze/compras_brutas.json"
+
+# Abre o ficheiro em modo de escrita ("w") com codificação utf-8
+with open(caminho_bronze, "w", encoding="utf-8") as f:
+    # Guarda a lista de dicionários diretamente no ficheiro JSON de forma legível e indentada
+    json.dump(dados_compras_reais, f, ensure_ascii=False, indent=4)
+
+# Imprime mensagem de confirmação da Camada Bronze
+print("Camada Bronze atualizada com os dados corretos de compras!")
+
+# Inicializa ou obtém uma SparkSession com o nome "CompraClara-SilverPipeline"
+spark = SparkSession.builder.appName("CompraClara-SilverPipeline").getOrCreate()
+
+# Lê o ficheiro JSON da Camada Bronze para dentro de um DataFrame do Spark (.option("multiLine", "true" permite ler JSONs estruturados em múltiplas linhas))
+df_bronze = (
+    spark.read.option("multiLine", "true")
+    .json("datalake/bronze/compras_brutas.json")
+)
+
+# Imprime um cabeçalho e mostra no console o conteúdo bruto tal como foi lido do Data Lake Bronze
+print("--- DADOS NA CAMADA BRONZE ---")
+df_bronze.show(truncate=False)
+
+# Início da Camada Silver: limpa, filtra e padroniza os dados brutos
+df_silver = (
+    df_bronze
+    # Remove registos onde o "id_item" ou o "preco_unitario" sejam nulos (limpeza de dados inválidos)
+    .filter(col("id_item").isNotNull() & col("preco_unitario").isNotNull())
+    # Padroniza a coluna "nome_item" convertendo para maiúsculas (upper) e tirando espaços extras nas pontas (trim)
+    .withColumn("nome_item", upper(trim(col("nome_item"))))
+)
+
+# Define o caminho onde os dados limpos e otimizados serão guardados na Camada Silver (em formato Parquet)
+caminho_silver = "datalake/silver/compras_limpas"
+
+# Grava o DataFrame limpo no formato Parquet, sobrescrevendo caso já exista (.mode("overwrite"))
+df_silver.write.mode("overwrite").parquet(caminho_silver)
+
+# Imprime mensagem de sucesso e exibe a tabela limpa final no ecrã
+print("Sucesso! Dados limpos e gravados na Camada Silver.")
+df_silver.show(truncate=False)
+import os
+import json
+import requests
+
+# 1. Garantir que o diretório Bronze existe
+os.makedirs("datalake/bronze", exist_ok=True)
+
+url_base = "https://dadosabertos.compras.gov.br/modulo-material/1_consultarGrupoMaterial"
+headers = {
+    "Accept": "application/json",
+    "User-Agent": "Mozilla/5.0"
+}
+
+pagina = 1
+tamanho_pagina = 100  # Aumentamos para 100 itens por requisição para ser mais eficiente
+todos_os_registros = []
+
+print("=== A iniciar recolha paginada da API (Camada Bronze) ===")
+
+while True:
+    # Montar o URL com os parâmetros dinâmicos de paginação
+    url_atual = f"{url_base}?pagina={pagina}&tamanhoPagina={tamanho_pagina}"
+
+    try:
+        response = requests.get(url_atual, headers=headers)
+
+        if response.status_code == 200:
+            dados = response.json()
+
+            # Extrair a lista de resultados com base na estrutura da API
+            if isinstance(dados, dict):
+                # Procura pela chave 'resultado' ou pela primeira chave que seja uma lista
+                if "resultado" in dados:
+                    lista_pagina = dados["resultado"]
+                else:
+                    chave_lista = next((k for k, v in dados.items() if isinstance(v, list)), None)
+                    lista_pagina = dados[chave_lista] if chave_lista else []
+            elif isinstance(dados, list):
+                lista_pagina = dados
+            else:
+                lista_pagina = []
+
+            # Se a página vier vazia, significa que chegámos ao fim dos dados da API
+            if not lista_pagina:
+                print(f"Fim dos dados atingido na página {pagina}.")
+                break
+
+            # Acumular os registos recolhidos
+            todos_os_registros.extend(lista_pagina)
+            print(f"Página {pagina} recolhida com sucesso ({len(lista_pagina)} registos). Total acumulado: {len(todos_os_registros)}")
+
+            # Incrementar para a próxima página
+            pagina += 1
+        else:
+            print(f"Aviso: A API respondeu com o código {response.status_code} na página {pagina}.")
+            break
+
+    except Exception as e:
+        print(f"Ocorreu um erro na requisição da página {pagina}:", e)
+        break
+
+# 2. Guardar o payload completo consolidado na Camada Bronze
+caminho_bronze_completo = "datalake/bronze/compras_brutas_completo.json"
+
+payload_final = {
+    "total_registros": len(todos_os_registros),
+    "resultado": todos_os_registros
+}
+
+with open(caminho_bronze_completo, "w", encoding="utf-8") as f:
+    json.dump(payload_final, f, ensure_ascii=False, indent=4)
+
+print(f"\nSucesso absoluto! Ingestão Bronze concluída. Total de {len(todos_os_registros)} registos guardados em: {caminho_bronze_completo}")
+import requests
+import json
+import os
+
+# Cria o diretório de destino caso ele não exista
+os.makedirs("datalake/bronze", exist_ok=True)
+
+url_base = "https://dadosabertos.compras.gov.br/modulo-material/1_consultarGrupoMaterial"
+
+# Define os cabeçalhos para aceitar JSON e simular um navegador
+headers = {
+    "Accept": "application/json",
+    "User-Agent": "Mozilla/5.0"
+}
+
+pagina = 1
+tamanho_pagina = 100  # Lote maior para eficiência na recolha completa
+todos_os_registros = []
+
+print("=== A iniciar recolha paginada da API (Camada Bronze) ===")
+
+while True:
+    # Monta o URL dinâmico para a página atual
+    url_atual = f"{url_base}?pagina={pagina}&tamanhoPagina={tamanho_pagina}"
+
+    try:
+        response = requests.get(url_atual, headers=headers)
+
+        if response.status_code == 200:
+            dados = response.json()
+
+            # Extração flexível da lista de resultados do payload da API
+            if isinstance(dados, dict):
+                if "resultado" in dados:
+                    lista_pagina = dados["resultado"]
+                else:
+                    chave_lista = next((k for k, v in dados.items() if isinstance(v, list)), None)
+                    lista_pagina = dados[chave_lista] if chave_lista else []
+            elif isinstance(dados, list):
+                lista_pagina = dados
+            else:
+                lista_pagina = []
+
+            # Se a lista vier vazia, atingimos o fim dos dados da API
+            if not lista_pagina:
+                print(f"Fim dos dados atingido na página {pagina}.")
+                break
+
+            # Acumula os registos
+            todos_os_registros.extend(lista_pagina)
+            print(f"Página {pagina} recolhida com sucesso ({len(lista_pagina)} registos). Total acumulado: {len(todos_os_registros)}")
+
+            # Avança para a próxima página
+            pagina += 1
+        else:
+            print(f"Erro na API: {response.status_code} na página {pagina}")
+            break
+
+    except Exception as e:
+        print(f"Ocorreu um erro na requisição da página {pagina}:", e)
+        break
+
+# Define o caminho do ficheiro consolidado na Camada Bronze
+caminho_bronze = "datalake/bronze/compras_brutas_completo.json"
+
+payload_final = {
+    "total_registros": len(todos_os_registros),
+    "resultado": todos_os_registros
+}
+
+# Grava todos os dados brutos consolidados em formato JSON com codificação UTF-8
+with open(caminho_bronze, "w", encoding="utf-8") as f:
+    json.dump(payload_final, f, ensure_ascii=False, indent=4)
+
+print(f"\nSucesso absoluto! Todos os {len(todos_os_registros)} registos da API foram guardados na Camada Bronze em: {caminho_bronze}")
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, upper, trim
+import json
+import os
+
+# 1. Iniciar o Spark
+spark = SparkSession.builder \
+    .appName("CompraClara-SilverLayer-Debug") \
+    .getOrCreate()
+
+# 2. Ler o ficheiro JSON da Bronze e inspecionar as chaves
+caminho_bronze = "datalake/bronze/compras_brutas.json"
+with open(caminho_bronze, "r", encoding="utf-8") as f:
+    conteudo_json = json.load(f)
+
+print("Chaves principais encontradas no JSON bruto:", conteudo_json.keys() if isinstance(conteudo_json, dict) else "É uma lista direta")
+
+# 3. Extrair os dados dependendo de onde eles estão guardados
+if isinstance(conteudo_json, dict):
+    # Se existir a chave 'resultado', usamos ela; senão, procuramos outra chave com dados
+    if "resultado" in conteudo_json:
+        lista_dados = conteudo_json["resultado"]
+    else:
+        # Pega a primeira chave que contenha uma lista
+        chave_com_lista = next((k for k, v in conteudo_json.items() if isinstance(v, list)), None)
+        lista_dados = conteudo_json[chave_com_lista] if chave_com_lista else [conteudo_json]
+else:
+    lista_dados = conteudo_json
+
+print(f"Total de registos extraídos com sucesso: {len(lista_dados)}")
+
+if len(lista_dados) > 0:
+    # 4. Criar o DataFrame do Spark com os dados reais
+    df_bronze = spark.createDataFrame(lista_dados)
+    print("Colunas detetadas:", df_bronze.columns)
+
+    # Mapear as colunas de forma segura (ajustando aos nomes reais da tabela)
+    colunas = df_bronze.columns
+    c_cod = next((c for c in colunas if "codigo" in c.lower()), colunas[0])
+    c_nome = next((c for c in colunas if "nome" in c.lower()), colunas[1] if len(colunas) > 1 else colunas[0])
+
+    df_silver = df_bronze.select(
+        col(c_cod).alias("codigo_grupo"),
+        upper(trim(col(c_nome))).alias("nome_grupo")
+    )
+
+    # 5. Guardar em Parquet na Camada Silver
+    caminho_silver = "datalake/silver/grupo_material_limpo"
+    df_silver.write.mode("overwrite").parquet(caminho_silver)
+    print(f"Sucesso! Dados limpos guardados em Parquet em: {caminho_silver}")
+    df_silver.show(5, truncate=False)
+else:
+    print("Aviso: O JSON continua sem registos. Vamos verificar o URL da API na camada Bronze.")
+import pandas as pd
+
+if len(lista_dados) > 0:
+    # 1. Converte para DataFrame do Pandas
+    pdf = pd.DataFrame(lista_dados)
+
+    # 2. Converte todas as colunas para string para evitar erros de tipo nulo no Spark
+    pdf = pdf.astype(str)
+
+    # 3. Converte para DataFrame do Spark de forma segura
+    df_bronze = spark.createDataFrame(pdf)
+    print("Colunas de itens detetadas:", df_bronze.columns)
+
+    colunas = df_bronze.columns
+    c_cod = next((c for c in colunas if "codigo" in c.lower()), colunas[0])
+    c_desc = next((c for c in colunas if "descricao" in c.lower() or "nome" in c.lower()), colunas[1] if len(colunas) > 1 else colunas[0])
+
+    df_silver = df_bronze.select(
+        col(c_cod).alias("codigo_item"),
+        upper(trim(col(c_desc))).alias("descricao_item")
+    )
+
+    caminho_silver = "datalake/silver/itens_limpos"
+    df_silver.write.mode("overwrite").parquet(caminho_silver)
+
+    print(f"Sucesso! Itens limpos guardados em Parquet em: {caminho_silver}")
+    df_silver.show(5, truncate=False)
+else:
+    print("Aviso: O ficheiro JSON de itens está vazio.")
+from pyspark.sql.functions import col, avg, max, min, desc
+
+# 1. Ler os dados limpos da Camada Silver (Itens CATMAT)
+caminho_silver = "datalake/silver/itens_limpos"
+df_silver_itens = spark.read.parquet(caminho_silver)
+
+print("--- Amostra dos Dados da Camada Silver ---")
+df_silver_itens.show(5, truncate=False)
+
+# 2. Simular/Carregar os dados de Contratos com o esquema explícito
+dados_contratos_exemplo = [
+    ("12345", "PAPEL A4 75G", 22.50, "Orgao A"),
+    ("12345", "PAPEL A4 75G", 21.00, "Orgao B"),
+    ("12345", "PAPEL A4 75G", 45.00, "Orgao C"), # Possível anomalia!
+    ("67890", "CANETA ESFEROGRAFICA", 1.20, "Orgao A"),
+    ("67890", "CANETA ESFEROGRAFICA", 1.30, "Orgao B")
+]
+
+colunas_contratos = ["codigo_item", "descricao_contrato", "preco_unitario", "orgao"]
+
+# Correção aplicada aqui: passar o schema explicitamente
+df_contratos_bronze = spark.createDataFrame(dados_contratos_exemplo, schema=colunas_contratos)
+
+# 3. Cruzamento (JOIN) entre a Silver de Itens e os Contratos
+df_gold_analise = df_contratos_bronze.join(
+    df_silver_itens,
+    on="codigo_item",
+    how="inner"
+)
+
+print("--- Resultado do Cruzamento (Camada Gold Preliminar) ---")
+df_gold_analise.show(truncate=False)
+import os
+import json
+import requests
+import pandas as pd
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, upper, trim, avg, when
+
+# ==========================================
+# 0. INICIALIZAÇÃO DO SPARK
+# ==========================================
+spark = SparkSession.builder \
+    .appName("CompraClara-PipelineCompleto") \
+    .getOrCreate()
+
+
+# ==========================================
+# 1. CAMADA BRONZE: Ingestão Paginada Automática
+# ==========================================
+print("=== 1. CAMADA BRONZE: Ingestão Paginada da API ===")
+os.makedirs("datalake/bronze", exist_ok=True)
+
+url_base = "https://dadosabertos.compras.gov.br/modulo-material/1_consultarGrupoMaterial"
+headers = {
+    "Accept": "application/json",
+    "User-Agent": "Mozilla/5.0"
+}
+
+pagina = 1
+tamanho_pagina = 100  # Lote maior para eficiência na recolha completa
+todos_os_registros = []
+
+while True:
+    url_atual = f"{url_base}?pagina={pagina}&tamanhoPagina={tamanho_pagina}"
+    try:
+        response = requests.get(url_atual, headers=headers)
+        if response.status_code == 200:
+            dados = response.json()
+
+            # Extração flexível da lista de resultados
+            if isinstance(dados, dict):
+                if "resultado" in dados:
+                    lista_pagina = dados["resultado"]
+                else:
+                    chave_lista = next((k for k, v in dados.items() if isinstance(v, list)), None)
+                    lista_pagina = dados[chave_lista] if chave_lista else []
+            elif isinstance(dados, list):
+                lista_pagina = dados
+            else:
+                lista_pagina = []
+
+            # Se a lista vier vazia, atingimos o fim dos dados da API
+            if not lista_pagina:
+                print(f"Fim dos dados atingido na página {pagina}.")
+                break
+
+            todos_os_registros.extend(lista_pagina)
+            print(f"Página {pagina} recolhida ({len(lista_pagina)} registos). Total acumulado: {len(todos_os_registros)}")
+            pagina += 1
+        else:
+            print(f"Aviso: A API respondeu com o código {response.status_code} na página {pagina}")
+            break
+    except Exception as e:
+        print(f"Ocorreu um erro na requisição da página {pagina}:", e)
+        break
+
+caminho_bronze = "datalake/bronze/compras_brutas.json"
+payload_final = {
+    "total_registros": len(todos_os_registros),
+    "resultado": todos_os_registros
+}
+
+with open(caminho_bronze, "w", encoding="utf-8") as f:
+    json.dump(payload_final, f, ensure_ascii=False, indent=4)
+print(f"Sucesso! Ingestão Bronze concluída com {len(todos_os_registros)} registos.")
+
+
+# ==========================================
+# 2. CAMADA SILVER: Limpeza e Padronização
+# ==========================================
+print("\n=== 2. CAMADA SILVER: Limpeza e Transformação ===")
+
+if os.path.exists(caminho_bronze):
+    with open(caminho_bronze, "r", encoding="utf-8") as f:
+        conteudo_json = json.load(f)
+
+    if isinstance(conteudo_json, dict):
+        if "resultado" in conteudo_json:
+            lista_dados = conteudo_json["resultado"]
+        else:
+            chave_com_lista = next((k for k, v in conteudo_json.items() if isinstance(v, list)), None)
+            lista_dados = conteudo_json[chave_com_lista] if chave_com_lista else [conteudo_json]
+    else:
+        lista_dados = conteudo_json
+
+    if len(lista_dados) > 0:
+        pdf = pd.DataFrame(lista_dados)
+        pdf = pdf.astype(str)
+        df_bronze = spark.createDataFrame(pdf)
+
+        colunas = df_bronze.columns
+        c_cod = next((c for c in colunas if "codigo" in c.lower()), colunas[0])
+        c_desc = next((c for c in colunas if "descricao" in c.lower() or "nome" in c.lower()), colunas[1] if len(colunas) > 1 else colunas[0])
+
+        df_silver = df_bronze.select(
+            col(c_cod).alias("codigo_item"),
+            upper(trim(col(c_desc))).alias("descricao_item")
+        )
+
+        caminho_silver = "datalake/silver/itens_limpos"
+        df_silver.write.mode("overwrite").parquet(caminho_silver)
+        print(f"Sucesso! Itens limpos guardados em Parquet em: {caminho_silver}")
+        df_silver.show(5, truncate=False)
+    else:
+        print("Aviso: O ficheiro JSON está vazio. A criar dados simulados para teste.")
+        dados_simulados = [("12345", "PAPEL A4 75G"), ("67890", "CANETA ESFEROGRAFICA")]
+        df_bronze = spark.createDataFrame(dados_simulados, ["codigo_item", "descricao_item"])
+        df_silver = df_bronze.select(
+            col("codigo_item"),
+            upper(trim(col("descricao_item"))).alias("descricao_item")
+        )
+        caminho_silver = "datalake/silver/itens_limpos"
+        df_silver.write.mode("overwrite").parquet(caminho_silver)
+
+
+# ==========================================
+# 3. CAMADA GOLD: Cruzamento e Anomalias
+# ==========================================
+print("\n=== 3. CAMADA GOLD: Análise e Deteção de Anomalias ===")
+
+caminho_silver = "datalake/silver/itens_limpos"
+df_silver_itens = spark.read.parquet(caminho_silver)
+
+dados_contratos_exemplo = [
+    ("12345", "PAPEL A4 75G", 22.50, "Orgao A"),
+    ("12345", "PAPEL A4 75G", 21.00, "Orgao B"),
+    ("12345", "PAPEL A4 75G", 45.00, "Orgao C"), # Possível anomalia!
+    ("67890", "CANETA ESFEROGRAFICA", 1.20, "Orgao A"),
+    ("67890", "CANETA ESFEROGRAFICA", 1.30, "Orgao B")
+]
+
+colunas_contratos = ["codigo_item", "descricao_contrato", "preco_unitario", "orgao"]
+df_contratos_bronze = spark.createDataFrame(dados_contratos_exemplo, schema=colunas_contratos)
+
+df_gold_analise = df_contratos_bronze.join(
+    df_silver_itens,
+    on="codigo_item",
+    how="inner"
+)
+
+df_media_itens = df_gold_analise.groupBy("codigo_item", "descricao_item").agg(
+    avg("preco_unitario").alias("preco_medio")
+)
+
+df_gold_com_media = df_gold_analise.join(
+    df_media_itens,
+    on=["codigo_item", "descricao_item"],
+    how="inner"
+)
+
+df_gold_anomalias = df_gold_com_media.withColumn(
+    "status_preco",
+    when(col("preco_unitario") > (col("preco_medio") * 1.3), "POSSIVEL ANOMALIA (ACIMA)").otherwise("NORMAL")
+)
+
+print("--- Relatório Final de Anomalias de Preços (Camada Gold) ---")
+df_gold_anomalias.select(
+    "orgao", "codigo_item", "descricao_contrato", "preco_unitario", "preco_medio", "status_preco"
+).show(truncate=False)
+import os
+import json
+import requests
+import pandas as pd
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, upper, trim
+
+# ==========================================
+# CATSER (SERVIÇOS) - CAMADA BRONZE (Paginada)
+# ==========================================
+print("=== CATSER - CAMADA BRONZE: Ingestão de Serviços ===")
+os.makedirs("datalake/bronze", exist_ok=True)
+
+url_base_servico = "https://dadosabertos.compras.gov.br/modulo-servico/1_consultarGrupoServico"
+headers = {
+    "Accept": "application/json",
+    "User-Agent": "Mozilla/5.0"
+}
+
+pagina = 1
+tamanho_pagina = 100
+todos_os_servicos = []
+
+while True:
+    url_atual = f"{url_base_servico}?pagina={pagina}&tamanhoPagina={tamanho_pagina}"
+    try:
+        response = requests.get(url_atual, headers=headers)
+        if response.status_code == 200:
+            dados = response.json()
+
+            if isinstance(dados, dict):
+                if "resultado" in dados:
+                    lista_pagina = dados["resultado"]
+                else:
+                    chave_lista = next((k for k, v in dados.items() if isinstance(v, list)), None)
+                    lista_pagina = dados[chave_lista] if chave_lista else []
+            elif isinstance(dados, list):
+                lista_pagina = dados
+            else:
+                lista_pagina = []
+
+            if not lista_pagina:
+                print(f"Fim dos dados de serviços atingido na página {pagina}.")
+                break
+
+            todos_os_servicos.extend(lista_pagina)
+            print(f"Serviços - Página {pagina} recolhida ({len(lista_pagina)} registos). Total acumulado: {len(todos_os_servicos)}")
+            pagina += 1
+        else:
+            print(f"Aviso: A API de serviços respondeu com o código {response.status_code} na página {pagina}")
+            break
+    except Exception as e:
+        print(f"Ocorreu um erro na requisição de serviços na página {pagina}:", e)
+        break
+
+caminho_bronze_servico = "datalake/bronze/servicos_brutos.json"
+payload_servicos = {
+    "total_registros": len(todos_os_servicos),
+    "resultado": todos_os_servicos
+}
+
+with open(caminho_bronze_servico, "w", encoding="utf-8") as f:
+    json.dump(payload_servicos, f, ensure_ascii=False, indent=4)
+print(f"Sucesso! Ingestão Bronze de Serviços concluída com {len(todos_os_servicos)} registos.")
+
+
+# ==========================================
+# CATSER (SERVIÇOS) - CAMADA SILVER (Limpeza)
+# ==========================================
+print("\n=== CATSER - CAMADA SILVER: Limpeza e Padronização de Serviços ===")
+
+spark = SparkSession.builder.appName("CompraClara-CATSER").getOrCreate()
+
+if os.path.exists(caminho_bronze_servico):
+    with open(caminho_bronze_servico, "r", encoding="utf-8") as f:
+        conteudo_json = json.load(f)
+
+    if isinstance(conteudo_json, dict):
+        lista_dados = conteudo_json.get("resultado", [])
+    else:
+        lista_dados = conteudo_json
+
+    if len(lista_dados) > 0:
+        pdf_serv = pd.DataFrame(lista_dados).astype(str)
+        df_bronze_serv = spark.createDataFrame(pdf_serv)
+
+        colunas_s = df_bronze_serv.columns
+        c_cod_s = next((c for c in colunas_s if "codigo" in c.lower()), colunas_s[0])
+        c_desc_s = next((c for c in colunas_s if "descricao" in c.lower() or "nome" in c.lower()), colunas_s[1] if len(colunas_s) > 1 else colunas_s[0])
+
+        df_silver_servicos = df_bronze_serv.select(
+            col(c_cod_s).alias("codigo_servico"),
+            upper(trim(col(c_desc_s))).alias("descricao_servico")
+        )
+
+        caminho_silver_servico = "datalake/silver/servicos_limpos"
+        df_silver_servicos.write.mode("overwrite").parquet(caminho_silver_servico)
+        print(f"Sucesso! Serviços limpos guardados em Parquet em: {caminho_silver_servico}")
+        df_silver_servicos.show(5, truncate=False)
