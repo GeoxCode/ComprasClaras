@@ -1,5 +1,5 @@
 # ComprasClaras
-Compra Clara
+Compra Claras
 
 Plataforma de análise e visualização de preços em compras públicas
 
