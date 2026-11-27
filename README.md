@@ -1,8 +1,6 @@
 # ComprasClaras
 ![Tela inicial](Banner.png)
 
-Compra Claras
-
 Plataforma de análise e visualização de preços em compras públicas
 
 O Compra Clara é um projeto acadêmico desenvolvido com o objetivo de facilitar a consulta, organização e análise de informações relacionadas aos preços de materiais e serviços registrados em compras públicas do Governo Federal.
