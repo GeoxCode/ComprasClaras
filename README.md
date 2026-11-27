@@ -1,4 +1,6 @@
 # ComprasClaras
+![Tela inicial](Banner.png)
+
 Compra Claras
 
 Plataforma de análise e visualização de preços em compras públicas
@@ -98,11 +100,11 @@ Melhorias futuras
 
 
 Feito por:
--GeoxCode
--joaohelioleal
--Luís-agosto07
--pedro-89op
-ViniciusAlmeida1prog
+- GeoxCode
+- joaohelioleal
+- Luís-agosto07
+- pedro-89op
+- ViniciusAlmeida1prog
 
 ---
 
