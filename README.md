@@ -75,6 +75,8 @@ https://dadosabertos.compras.gov.br/swagger-ui/index.html
 Repositórios e ambientes de desenvolvimento
 
 - Código-fonte: https://github.com/GeoxCode/ComprasClaras
+- Google Colab: https://colab.research.google.com/drive/1ntuuLlbMYnb7SCV79L4zy50ZCniUeRzK?usp=sharing
+
 
 Organização da equipe
 
@@ -96,10 +98,10 @@ Melhorias futuras
 
 
 Feito por:
-GeoxCode
-joaohelioleal
-Luís-agosto07
-pedro-89op
+-GeoxCode
+-joaohelioleal
+-Luís-agosto07
+-pedro-89op
 ViniciusAlmeida1prog
 
 ---
